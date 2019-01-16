@@ -87,13 +87,15 @@ FARPROC InternalGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
     PIMAGE_DOS_HEADER pImageDosHeader = (PIMAGE_DOS_HEADER)hModule;
     PIMAGE_NT_HEADERS32 pImageHeader = (PIMAGE_NT_HEADERS32)((DWORD)hModule + (DWORD)pImageDosHeader->e_lfanew);
     PIMAGE_EXPORT_DIRECTORY pImageExportDirectory = (PIMAGE_EXPORT_DIRECTORY)((DWORD)hModule + (DWORD)pImageHeader->OptionalHeader.DataDirectory->VirtualAddress);
-    DWORD *pAddressOfNames     = (DWORD*)((DWORD)hModule + (DWORD)pImageExportDirectory->AddressOfNames);
-    DWORD *pAddressOfFunctions = (DWORD*)((DWORD)hModule + (DWORD)pImageExportDirectory->AddressOfFunctions);
-    for (int i = 0; i < pImageExportDirectory->NumberOfFunctions; i++)
+    DWORD *pAddressOfNames       = (DWORD*)(pImageExportDirectory->AddressOfNames + (DWORD)hModule);
+    DWORD *pAddressOfFunctions   = (DWORD*)(pImageExportDirectory->AddressOfFunctions + (DWORD)hModule);
+    WORD *pAddressOfNameOrdinals = (WORD*)(pImageExportDirectory->AddressOfNameOrdinals + (DWORD)hModule);
+    for (int i = 0; i < pImageExportDirectory->NumberOfNames; i++)
     {
+        //std::cout << i << " - " << (LPCSTR)((DWORD)pAddressOfNames[i] +  (DWORD)hModule) << " - " << pAddressOfNameOrdinals[i] << std::endl; // extra
         if (0 == strcmp((LPCSTR)((DWORD)pAddressOfNames[i] +  (DWORD)hModule), lpProcName))
         {
-            pProcAddress = (FARPROC)((DWORD)pAddressOfFunctions[i + 1] + (DWORD)hModule);
+            pProcAddress = (FARPROC)(pAddressOfFunctions[pAddressOfNameOrdinals[i]] + (DWORD)hModule);
             break;
         }
     }
